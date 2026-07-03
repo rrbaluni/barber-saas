@@ -48,7 +48,10 @@ export default function Footer() {
         <motion.div initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} viewport={{ once: true }}
           className="mt-12 pt-8 border-t border-white/5 flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left">
           <p className="text-white/20 text-xs">&copy; {new Date().getFullYear()} BARBERIA. All rights reserved.</p>
-          <p className="text-white/10 text-xs">Crafted with precision &middot; Premium barbershop experience</p>
+          <div className="flex items-center gap-4">
+            <Link href="/admin" className="text-white/10 hover:text-gold/50 text-xs transition-colors">Admin</Link>
+            <span className="text-white/10 text-xs">Crafted with precision &middot; Premium barbershop experience</span>
+          </div>
         </motion.div>
       </div>
     </footer>
