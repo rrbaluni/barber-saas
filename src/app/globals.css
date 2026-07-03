@@ -1,12 +1,14 @@
 @import "tailwindcss";
 
 @theme inline {
-  --color-gold: #d4a84b;
-  --color-gold-dark: #b8942e;
-  --color-gold-light: #e2c06a;
-  --color-charcoal: #1a1a2e;
-  --color-charcoal-light: #2a2a3e;
-  --color-cream: #faf6f0;
+  --color-gold: #c9953c;
+  --color-gold-dark: #a87a2e;
+  --color-gold-light: #dbb05e;
+  --color-charcoal: #111118;
+  --color-charcoal-light: #1e1e28;
+  --color-charcoal-lighter: #2a2a38;
+  --color-cream: #f8f5f0;
+  --color-cream-dark: #efe8dc;
   --font-sans: var(--font-inter);
   --font-heading: var(--font-playfair);
 }
@@ -17,17 +19,57 @@
 }
 
 @utility text-gradient {
-  background: linear-gradient(to right, #d4a84b, #e2c06a);
+  background: linear-gradient(135deg, #c9953c, #dbb05e);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 
 @utility glow-gold {
-  box-shadow: 0 0 20px rgba(212, 168, 75, 0.3);
+  box-shadow: 0 0 30px rgba(201, 149, 60, 0.25);
 }
 
 @utility bg-grid {
-  background-image: radial-gradient(rgba(212, 168, 75, 0.1) 1px, transparent 1px);
+  background-image: radial-gradient(rgba(201, 149, 60, 0.08) 1px, transparent 1px);
   background-size: 40px 40px;
 }
+
+@utility bg-grid-white {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-12px); }
+}
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulse-gold {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(201, 149, 60, 0.4); }
+  50% { box-shadow: 0 0 0 12px rgba(201, 149, 60, 0); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@utility animate-float {
+  animation: float 4s ease-in-out infinite;
+}
+
+@utility animate-fade-up {
+  animation: fade-up 0.6s ease-out;
+}
+
+@utility animate-pulse-gold {
+  animation: pulse-gold 2s ease-in-out infinite;
+}
+
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
