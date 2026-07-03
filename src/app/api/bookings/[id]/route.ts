@@ -5,7 +5,7 @@ import { isValidOrigin } from '@/lib/api-utils'
 function isAuthenticated(request: NextRequest): boolean {
   const auth = request.headers.get('Authorization')
   if (!auth || !auth.startsWith('Bearer ')) return false
-  return verifySession(auth.slice(7))
+  return !!verifySession(auth.slice(7))
 }
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {

@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
   try {
     if (!isPasswordConfigured()) {
       return NextResponse.json(
-        { error: 'Admin password not configured. Set ADMIN_PW_HASH environment variable.' },
+        { error: 'Password login not configured. Set ADMIN_PW_HASH or use Google sign-in.' },
         { status: 503 }
       )
     }
@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
 
     if (verifyPassword(password)) {
       clearRateLimit(ip)
-      const token = createSession()
+      const token = createSession('password')
       return NextResponse.json({ token })
     }
 
