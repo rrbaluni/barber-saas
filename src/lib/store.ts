@@ -1,42 +1,69 @@
 'use client'
 
-import { Booking, ShopSettings, DaySchedule } from '@/types'
+import { Booking, ShopSettings } from '@/types'
 
 const BOOKINGS_KEY = 'barberia_bookings'
+const BOOKINGS_HASH_KEY = 'barberia_bookings_hash'
 const SETTINGS_KEY = 'barberia_settings'
+
+function hash(data: string): string {
+  let h = 0
+  for (let i = 0; i < data.length; i++) {
+    h = ((h << 5) - h + data.charCodeAt(i)) | 0
+  }
+  return (h >>> 0).toString(36)
+}
+
+function storeWithIntegrity(key: string, hashKey: string, data: unknown): void {
+  const raw = JSON.stringify(data)
+  localStorage.setItem(key, raw)
+  localStorage.setItem(hashKey, hash(raw))
+}
+
+function readWithIntegrity<T>(key: string, hashKey: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key)
+    const storedHash = localStorage.getItem(hashKey)
+    if (!raw || !storedHash) return fallback
+    if (hash(raw) !== storedHash) {
+      localStorage.removeItem(key)
+      localStorage.removeItem(hashKey)
+      return fallback
+    }
+    return JSON.parse(raw) as T
+  } catch {
+    return fallback
+  }
+}
+
+function sanitize(str: string): string {
+  return str.replace(/<[^>]*>/g, '').trim()
+}
 
 export function getBookings(): Booking[] {
   if (typeof window === 'undefined') return []
-  try {
-    const data = localStorage.getItem(BOOKINGS_KEY)
-    return data ? JSON.parse(data) : []
-  } catch {
-    return []
-  }
+  return readWithIntegrity<Booking[]>(BOOKINGS_KEY, BOOKINGS_HASH_KEY, [])
 }
 
 export function saveBooking(booking: Booking): void {
   const bookings = getBookings()
   bookings.push(booking)
-  localStorage.setItem(BOOKINGS_KEY, JSON.stringify(bookings))
+  storeWithIntegrity(BOOKINGS_KEY, BOOKINGS_HASH_KEY, bookings)
 }
 
 export function updateBooking(id: string, updates: Partial<Booking>): void {
   const bookings = getBookings()
   const updated = bookings.map((b) => (b.id === id ? { ...b, ...updates } : b))
-  localStorage.setItem(BOOKINGS_KEY, JSON.stringify(updated))
+  storeWithIntegrity(BOOKINGS_KEY, BOOKINGS_HASH_KEY, updated)
 }
 
-export function updateBookingStatus(
-  id: string,
-  status: Booking['status']
-): void {
+export function updateBookingStatus(id: string, status: Booking['status']): void {
   updateBooking(id, { status })
 }
 
 export function deleteBooking(id: string): void {
   const bookings = getBookings()
-  localStorage.setItem(BOOKINGS_KEY, JSON.stringify(bookings.filter((b) => b.id !== id)))
+  storeWithIntegrity(BOOKINGS_KEY, BOOKINGS_HASH_KEY, bookings.filter((b) => b.id !== id))
 }
 
 export function getBookingsByDate(date: string): Booking[] {
@@ -83,7 +110,14 @@ export function saveSettings(settings: ShopSettings): void {
 }
 
 export function generateId(): string {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID()
+  }
   return Date.now().toString(36) + Math.random().toString(36).substring(2, 9)
+}
+
+export function sanitizeInput(input: string): string {
+  return sanitize(input)
 }
 
 export function formatDate(date: Date): string {

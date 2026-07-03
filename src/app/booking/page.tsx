@@ -5,10 +5,11 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { format, addDays, startOfWeek, isSameDay, isBefore, startOfToday } from 'date-fns'
 import { services, barbers, timeSlots } from '@/lib/data'
-import { saveBooking, generateId, getBookedSlots, getDailyBookingCount, getSettings } from '@/lib/store'
+import { saveBooking, generateId, getBookedSlots, getDailyBookingCount, getSettings, sanitizeInput } from '@/lib/store'
 import { HiCheck, HiArrowRight, HiCalendarDays, HiClock, HiExclamationCircle } from 'react-icons/hi2'
 
 const steps = ['Service', 'Barber', 'Date & Time', 'Details', 'Confirm']
+const PHONE_REGEX = /^[+\d][\d\s\-().]{6,20}$/
 
 function BookingForm() {
   const searchParams = useSearchParams()
@@ -51,17 +52,41 @@ function BookingForm() {
 
   const validateDetails = () => {
     const errs: Record<string, string> = {}
-    if (!name.trim()) errs.name = 'Name is required'
-    if (!email.trim()) errs.email = 'Email is required'
-    else if (!/\S+@\S+\.\S+/.test(email)) errs.email = 'Invalid email address'
-    if (!phone.trim()) errs.phone = 'Phone is required'
+    const cleanName = sanitizeInput(name)
+    if (!cleanName) errs.name = 'Name is required'
+    else if (cleanName.length < 2) errs.name = 'Name must be at least 2 characters'
+    const cleanEmail = sanitizeInput(email)
+    if (!cleanEmail) errs.email = 'Email is required'
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) errs.email = 'Enter a valid email address'
+    const cleanPhone = sanitizeInput(phone)
+    if (!cleanPhone) errs.phone = 'Phone number is required'
+    else if (!PHONE_REGEX.test(cleanPhone)) errs.phone = 'Enter a valid phone number'
     setErrors(errs)
     return Object.keys(errs).length === 0
   }
 
   const handleBook = () => {
-    if (!selectedDate) return
-    saveBooking({ id: generateId(), serviceId: selectedService, barberId: selectedBarber, customerName: name, customerEmail: email, customerPhone: phone, date: format(selectedDate, 'yyyy-MM-dd'), time: selectedTime, notes, status: 'confirmed', createdAt: new Date().toISOString() })
+    const errs: Record<string, string> = {}
+    if (!selectedService) errs.service = 'Select a service'
+    if (!selectedBarber) errs.barber = 'Select a barber'
+    if (!selectedDate) errs.date = 'Select a date'
+    if (!selectedTime) errs.time = 'Select a time'
+    if (!sanitizeInput(name)) errs.name = 'Name is required'
+    if (!sanitizeInput(email)) errs.email = 'Email is required'
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errs.email = 'Enter a valid email address'
+    if (!sanitizeInput(phone)) errs.phone = 'Phone is required'
+    else if (!PHONE_REGEX.test(phone)) errs.phone = 'Enter a valid phone number'
+    if (Object.keys(errs).length > 0) {
+      setErrors(errs)
+      return
+    }
+    saveBooking({
+      id: generateId(), serviceId: selectedService, barberId: selectedBarber,
+      customerName: sanitizeInput(name), customerEmail: sanitizeInput(email),
+      customerPhone: sanitizeInput(phone),
+      date: format(selectedDate!, 'yyyy-MM-dd'), time: selectedTime,
+      notes: sanitizeInput(notes), status: 'confirmed', createdAt: new Date().toISOString()
+    })
     setBooked(true)
   }
 
@@ -76,7 +101,7 @@ function BookingForm() {
         <h2 className="text-3xl font-heading font-bold text-charcoal dark:text-white mb-4">Booking Confirmed!</h2>
         <p className="text-charcoal/60 dark:text-white/60 mb-2">{selectedServiceData?.name} with {selectedBarberData?.name}</p>
         <p className="text-charcoal/60 dark:text-white/60 mb-8">{selectedDate && format(selectedDate, 'EEEE, MMMM d, yyyy')} at {selectedTime}</p>
-        <p className="text-sm text-charcoal/40 dark:text-white/40 mb-8">A confirmation has been sent to {email}</p>
+        <p className="text-sm text-charcoal/40 dark:text-white/40 mb-8">Your booking has been saved.</p>
         <button onClick={() => router.push('/')} className="px-8 py-3 bg-charcoal dark:bg-gold text-white dark:text-charcoal font-semibold rounded-full hover:bg-gold dark:hover:bg-white transition-colors">Back to Home</button>
       </motion.div>
     )
@@ -221,8 +246,9 @@ function BookingForm() {
               </div>
               <div>
                 <label htmlFor="booking-notes" className="block text-sm font-medium text-charcoal/70 dark:text-white/70 mb-1.5">Special Requests</label>
-                <textarea id="booking-notes" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Any preferences or notes..." rows={3}
-                  className="w-full px-4 py-3 rounded-xl border border-gold/10 bg-white dark:bg-charcoal-light text-charcoal dark:text-white focus:border-gold focus:ring-1 focus:ring-gold outline-none transition-all resize-none" />
+                <input id="booking-notes" type="text" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Any preferences or notes..."
+                  className="w-full px-4 py-3 rounded-xl border border-gold/10 bg-white dark:bg-charcoal-light text-charcoal dark:text-white focus:border-gold focus:ring-1 focus:ring-gold outline-none transition-all" maxLength={200} />
+                <p className="text-[10px] text-charcoal/30 dark:text-white/30 mt-1 text-right">{notes.length}/200</p>
               </div>
               <div className="bg-gold/5 rounded-xl p-4 border border-gold/10">
                 <h4 className="font-heading font-bold text-charcoal dark:text-white mb-2">Booking Summary</h4>
@@ -250,9 +276,9 @@ function BookingForm() {
               <div className="flex justify-between"><span className="text-charcoal/50 dark:text-white/50 text-sm">Barber</span><span className="font-medium text-charcoal dark:text-white">{selectedBarberData?.name}</span></div>
               <div className="flex justify-between"><span className="text-charcoal/50 dark:text-white/50 text-sm">Date</span><span className="font-medium text-charcoal dark:text-white">{selectedDate && format(selectedDate, 'EEEE, MMMM d, yyyy')}</span></div>
               <div className="flex justify-between"><span className="text-charcoal/50 dark:text-white/50 text-sm">Time</span><span className="font-medium text-charcoal dark:text-white">{selectedTime}</span></div>
-              <div className="flex justify-between"><span className="text-charcoal/50 dark:text-white/50 text-sm">Name</span><span className="font-medium text-charcoal dark:text-white">{name}</span></div>
-              <div className="flex justify-between"><span className="text-charcoal/50 dark:text-white/50 text-sm">Email</span><span className="font-medium text-charcoal dark:text-white">{email}</span></div>
-              <div className="flex justify-between"><span className="text-charcoal/50 dark:text-white/50 text-sm">Phone</span><span className="font-medium text-charcoal dark:text-white">{phone}</span></div>
+              <div className="flex justify-between"><span className="text-charcoal/50 dark:text-white/50 text-sm">Name</span><span className="font-medium text-charcoal dark:text-white">{sanitizeInput(name)}</span></div>
+              <div className="flex justify-between"><span className="text-charcoal/50 dark:text-white/50 text-sm">Email</span><span className="font-medium text-charcoal dark:text-white">{sanitizeInput(email)}</span></div>
+              <div className="flex justify-between"><span className="text-charcoal/50 dark:text-white/50 text-sm">Phone</span><span className="font-medium text-charcoal dark:text-white">{sanitizeInput(phone)}</span></div>
               <div className="pt-3 border-t border-gold/10 flex justify-between"><span className="font-heading font-bold text-charcoal dark:text-white">Total</span><span className="font-heading font-bold text-gold text-lg">${selectedServiceData?.price}</span></div>
             </div>
             <div className="flex items-center justify-between mt-8 max-w-md mx-auto">

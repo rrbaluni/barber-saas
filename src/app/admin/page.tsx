@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   getBookings, updateBookingStatus, updateBooking, deleteBooking,
@@ -14,6 +14,13 @@ import {
   HiOutlineClock, HiOutlineSun, HiOutlineArrowPath
 } from 'react-icons/hi2'
 
+const ADMIN_PW_HASH = '240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9'
+
+async function sha256(msg: string): Promise<string> {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(msg))
+  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('')
+}
+
 type Tab = 'dashboard' | 'settings'
 type BookingStatus = Booking['status']
 
@@ -22,9 +29,13 @@ export default function AdminPage() {
   const [filter, setFilter] = useState<BookingStatus | 'all'>('all')
   const [password, setPassword] = useState('')
   const [authenticated, setAuthenticated] = useState(false)
+  const [authError, setAuthError] = useState('')
   const [tab, setTab] = useState<Tab>('dashboard')
   const [settings, setSettings] = useState<ShopSettings>(getDefaultSettings())
   const [settingsSaved, setSettingsSaved] = useState(false)
+  const [loginAttempts, setLoginAttempts] = useState(0)
+  const [loginBlocked, setLoginBlocked] = useState(false)
+  const loginTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Reschedule state
   const [rescheduleId, setRescheduleId] = useState<string | null>(null)
@@ -36,11 +47,35 @@ export default function AdminPage() {
     setSettings(getSettings())
   }, [])
 
+  useEffect(() => {
+    if (!authenticated) return
+    const interval = setInterval(() => setBookings(getBookings()), 5000)
+    return () => clearInterval(interval)
+  }, [authenticated])
+
   const refreshBookings = () => setBookings(getBookings())
 
-  const handleAuth = (e: React.FormEvent) => {
+  const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (password === 'admin123') setAuthenticated(true)
+    if (loginBlocked) return
+    setAuthError('')
+    const hash = await sha256(password)
+    if (hash === ADMIN_PW_HASH) {
+      setAuthenticated(true)
+      setLoginAttempts(0)
+    } else {
+      const attempts = loginAttempts + 1
+      setLoginAttempts(attempts)
+      setAuthError(attempts >= 3 ? 'Too many attempts. Try again in 30 seconds.' : 'Incorrect password')
+      if (attempts >= 3) {
+        setLoginBlocked(true)
+        if (loginTimer.current) clearTimeout(loginTimer.current)
+        loginTimer.current = setTimeout(() => {
+          setLoginBlocked(false)
+          setLoginAttempts(0)
+        }, 30000)
+      }
+    }
   }
 
   const handleStatus = (id: string, status: BookingStatus) => {
@@ -49,7 +84,7 @@ export default function AdminPage() {
   }
 
   const handleDelete = (id: string) => {
-    if (confirm('Delete this booking permanently?')) {
+    if (window.confirm('Delete this booking permanently?')) {
       deleteBooking(id)
       refreshBookings()
     }
@@ -92,20 +127,21 @@ export default function AdminPage() {
           className="bg-white dark:bg-charcoal-light rounded-2xl p-8 shadow-xl border border-gold/10 w-full max-w-sm">
           <h1 className="text-2xl font-heading font-bold text-charcoal dark:text-white mb-2 text-center">Admin Access</h1>
           <p className="text-charcoal/60 dark:text-white/60 text-sm text-center mb-6">Enter the admin password to manage bookings.</p>
-          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password"
-            className="w-full px-4 py-3 rounded-xl border border-gold/10 bg-white dark:bg-charcoal-light text-charcoal dark:text-white focus:border-gold focus:ring-1 focus:ring-gold outline-none transition-all mb-4" />
-          <button type="submit" className="w-full px-6 py-3 bg-charcoal dark:bg-gold text-white dark:text-charcoal font-semibold rounded-xl hover:bg-gold dark:hover:bg-white transition-colors">Sign In</button>
+          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" disabled={loginBlocked}
+            className="w-full px-4 py-3 rounded-xl border border-gold/10 bg-white dark:bg-charcoal-light text-charcoal dark:text-white focus:border-gold focus:ring-1 focus:ring-gold outline-none transition-all mb-2" />
+          {authError && <p className="text-red-400 text-xs mb-4">{authError}</p>}
+          <button type="submit" disabled={loginBlocked}
+            className="w-full px-6 py-3 bg-charcoal dark:bg-gold text-white dark:text-charcoal font-semibold rounded-xl hover:bg-gold dark:hover:bg-white transition-colors disabled:opacity-40">
+            {loginBlocked ? 'Locked (30s)' : 'Sign In'}
+          </button>
         </motion.form>
       </section>
     )
   }
 
-  const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-
   return (
     <section className="min-h-screen pt-28 pb-20 bg-cream dark:bg-charcoal">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Tabs */}
         <div className="flex gap-1 mb-8 p-1 bg-white dark:bg-charcoal-light rounded-xl border border-gold/10 w-fit">
           <button onClick={() => setTab('dashboard')}
             className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium transition-all ${tab === 'dashboard' ? 'bg-charcoal dark:bg-gold text-white dark:text-charcoal shadow-lg' : 'text-charcoal/60 dark:text-white/60 hover:text-charcoal dark:hover:text-white'}`}>
@@ -132,10 +168,9 @@ export default function AdminPage() {
               </div>
             </div>
 
-            {/* Daily stats */}
             {bookings.length > 0 && (
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
-                {['confirmed', 'completed', 'cancelled'].map((s) => {
+                {(['confirmed', 'completed', 'cancelled'] as const).map((s) => {
                   const count = bookings.filter((b) => b.status === s).length
                   const colors = {
                     confirmed: 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300',
@@ -207,7 +242,6 @@ export default function AdminPage() {
               </div>
             )}
 
-            {/* Reschedule Modal */}
             <AnimatePresence>
               {rescheduleId && (
                 <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -269,7 +303,7 @@ export default function AdminPage() {
                       </button>
                       <span className={`font-medium text-sm ${schedule.enabled ? 'text-charcoal dark:text-white' : 'text-charcoal/30 dark:text-white/30'}`}>{schedule.day}</span>
                     </div>
-                    <div className="flex items-center gap-2 flex-1">
+                    <div className="flex items-center gap-2 flex-1 flex-wrap">
                       <div className="flex items-center gap-1.5">
                         <HiOutlineSun className="w-4 h-4 text-gold/60 shrink-0" />
                         <input type="time" value={schedule.open} onChange={(e) => updateSchedule(i, 'open', e.target.value)}
@@ -285,7 +319,7 @@ export default function AdminPage() {
                       </div>
                       <div className="flex items-center gap-1.5 ml-auto">
                         <span className="text-xs text-charcoal/40 dark:text-white/40">Max:</span>
-                        <input type="number" min={1} max={100} value={schedule.maxBookings} onChange={(e) => updateSchedule(i, 'maxBookings', parseInt(e.target.value) || 1)}
+                        <input type="number" min={1} max={100} value={schedule.maxBookings} onChange={(e) => updateSchedule(i, 'maxBookings', Math.min(100, Math.max(1, parseInt(e.target.value) || 1)))}
                           disabled={!schedule.enabled}
                           className="w-16 px-2 py-1.5 rounded-lg border border-gold/10 bg-white dark:bg-charcoal-light text-sm text-charcoal dark:text-white focus:border-gold focus:ring-1 focus:ring-gold outline-none transition-all text-center disabled:opacity-30" />
                         <span className="text-xs text-charcoal/40 dark:text-white/40">bookings</span>
@@ -296,7 +330,6 @@ export default function AdminPage() {
               </div>
             </div>
 
-            {/* Daily limits summary */}
             <div className="mt-6 bg-white dark:bg-charcoal-light rounded-2xl border border-gold/10 p-6">
               <h2 className="font-heading font-bold text-charcoal dark:text-white mb-4">Daily Capacity Overview</h2>
               <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
