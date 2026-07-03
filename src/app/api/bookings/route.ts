@@ -2,17 +2,17 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAllBookings, addBooking, verifySession } from '@/lib/server-store'
 import { isValidOrigin, validateBookingInput, sanitize } from '@/lib/api-utils'
 
-function isAuthenticated(request: NextRequest): boolean {
+async function isAuthenticated(request: NextRequest): Promise<boolean> {
   const auth = request.headers.get('Authorization')
   if (!auth || !auth.startsWith('Bearer ')) return false
-  return !!verifySession(auth.slice(7))
+  return !!(await verifySession(auth.slice(7)))
 }
 
 export async function GET(request: NextRequest) {
-  if (!isAuthenticated(request)) {
+  if (!(await isAuthenticated(request))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
-  return NextResponse.json(getAllBookings())
+  return NextResponse.json(await getAllBookings())
 }
 
 export async function POST(request: NextRequest) {
@@ -42,8 +42,8 @@ export async function POST(request: NextRequest) {
       createdAt: body.createdAt as string,
     }
 
-    addBooking(booking)
-    return NextResponse.json(booking, { status: 201 })
+    const created = await addBooking(booking)
+    return NextResponse.json(created, { status: 201 })
   } catch {
     return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
   }

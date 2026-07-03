@@ -1,10 +1,17 @@
 import { Booking } from '@/types'
-import { createHash, randomUUID } from 'crypto'
+import { randomUUID } from 'crypto'
+import nodemailer from 'nodemailer'
+import { db, isDbConnected } from './db'
 
 interface Session {
   expires: number
-  type: 'password' | 'google'
   email?: string
+}
+
+interface OtpEntry {
+  code: string
+  expires: number
+  attempts: number
 }
 
 interface RateLimitEntry {
@@ -13,32 +20,49 @@ interface RateLimitEntry {
   blockedUntil: number
 }
 
-const bookings = new Map<string, Booking>()
-const sessions = new Map<string, Session>()
-const oauthStates = new Map<string, number>()
+const bookingsMem = new Map<string, Booking>()
+const sessionsMem = new Map<string, Session>()
+const otps = new Map<string, OtpEntry>()
 const rateLimit = new Map<string, RateLimitEntry>()
 const SESSION_TTL = 24 * 60 * 60 * 1000
+const OTP_TTL = 5 * 60 * 1000
+const OTP_MAX_ATTEMPTS = 3
 const RATE_LIMIT_MAX = 5
 const RATE_LIMIT_WINDOW = 15 * 60 * 1000
 const RATE_LIMIT_BLOCK = 30 * 1000
 
-const ADMIN_PW_HASH = process.env.ADMIN_PW_HASH
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID
-const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL
+const SMTP_HOST = process.env.SMTP_HOST || ''
+const SMTP_PORT = parseInt(process.env.SMTP_PORT || '587', 10)
+const SMTP_USER = process.env.SMTP_USER || ''
+const SMTP_PASS = process.env.SMTP_PASS || ''
+const SMTP_FROM = process.env.SMTP_FROM || SMTP_USER
 
-if (!ADMIN_PW_HASH && (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET || !ADMIN_EMAIL)) {
-  console.error('❌ No authentication method configured.')
-  console.error('   Set ADMIN_PW_HASH (password) OR GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET + ADMIN_EMAIL (Google OAuth).')
+if (!ADMIN_EMAIL) {
+  console.error('Missing ADMIN_EMAIL environment variable.')
+}
+if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) {
+  console.error('Missing SMTP configuration. Set SMTP_HOST, SMTP_USER, SMTP_PASS, and ADMIN_EMAIL.')
+}
+
+const transporter = nodemailer.createTransport({
+  host: SMTP_HOST,
+  port: SMTP_PORT,
+  secure: SMTP_PORT === 465,
+  auth: { user: SMTP_USER, pass: SMTP_PASS },
+})
+
+function generateOtpCode(): string {
+  return String(Math.floor(100000 + Math.random() * 900000))
 }
 
 function cleanup(): void {
   const now = Date.now()
-  for (const [token, s] of sessions) {
-    if (now > s.expires) sessions.delete(token)
+  for (const [token, s] of sessionsMem) {
+    if (now > s.expires) sessionsMem.delete(token)
   }
-  for (const [state, exp] of oauthStates) {
-    if (now > exp) oauthStates.delete(state)
+  for (const [email, otp] of otps) {
+    if (now > otp.expires) otps.delete(email)
   }
   for (const [ip, entry] of rateLimit) {
     if (now > entry.windowStart + RATE_LIMIT_WINDOW && entry.blockedUntil === 0) {
@@ -50,39 +74,57 @@ function cleanup(): void {
   }
 }
 
-export function isPasswordConfigured(): boolean {
-  return !!ADMIN_PW_HASH
-}
-
-export function isGoogleAuthConfigured(): boolean {
-  return !!(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET && ADMIN_EMAIL)
-}
-
-export function getGoogleClientId(): string {
-  return GOOGLE_CLIENT_ID || ''
-}
-
-export function getGoogleClientSecret(): string {
-  return GOOGLE_CLIENT_SECRET || ''
+export function isOtpConfigured(): boolean {
+  return !!(ADMIN_EMAIL && SMTP_HOST && SMTP_USER && SMTP_PASS)
 }
 
 export function getAdminEmail(): string {
   return ADMIN_EMAIL || ''
 }
 
-export function createOAuthState(): string {
+export async function sendOtp(email: string): Promise<{ success: boolean; error?: string }> {
   cleanup()
-  const state = randomUUID()
-  oauthStates.set(state, Date.now() + 10 * 60 * 1000)
-  return state
+  if (email.toLowerCase() !== ADMIN_EMAIL?.toLowerCase()) {
+    return { success: false, error: 'Unauthorized email address.' }
+  }
+
+  const code = generateOtpCode()
+  otps.set(email.toLowerCase(), { code, expires: Date.now() + OTP_TTL, attempts: 0 })
+
+  try {
+    await transporter.sendMail({
+      from: SMTP_FROM,
+      to: email,
+      subject: 'Your Admin Verification Code',
+      text: `Your admin verification code is: ${code}\n\nThis code expires in 5 minutes.`,
+      html: `<p>Your admin verification code is:</p><h2 style="font-size: 28px; letter-spacing: 4px; color: #333;">${code}</h2><p>This code expires in 5 minutes.</p>`,
+    })
+    return { success: true }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed to send email'
+    return { success: false, error: message }
+  }
 }
 
-export function consumeOAuthState(state: string): boolean {
+export function verifyOtp(email: string, code: string): { valid: boolean; error?: string } {
   cleanup()
-  const exp = oauthStates.get(state)
-  if (!exp) return false
-  oauthStates.delete(state)
-  return Date.now() < exp
+  const key = email.toLowerCase()
+  const entry = otps.get(key)
+  if (!entry) return { valid: false, error: 'No OTP sent. Request a new code.' }
+  if (Date.now() > entry.expires) {
+    otps.delete(key)
+    return { valid: false, error: 'OTP expired. Request a new code.' }
+  }
+  if (entry.attempts >= OTP_MAX_ATTEMPTS) {
+    otps.delete(key)
+    return { valid: false, error: 'Too many incorrect attempts. Request a new code.' }
+  }
+  if (entry.code !== code) {
+    entry.attempts++
+    return { valid: false, error: 'Invalid code.' }
+  }
+  otps.delete(key)
+  return { valid: true }
 }
 
 export function checkRateLimit(ip: string): { allowed: boolean; remaining: number; blockedUntil: number | null } {
@@ -117,48 +159,129 @@ export function clearRateLimit(ip: string): void {
   rateLimit.delete(ip)
 }
 
-export function verifyPassword(password: string): boolean {
-  if (!ADMIN_PW_HASH) return false
-  return createHash('sha256').update(password).digest('hex') === ADMIN_PW_HASH
-}
-
-export function createSession(type: 'password' | 'google' = 'password', email?: string): string {
+export async function createSession(email?: string): Promise<string> {
   cleanup()
   const token = randomUUID()
-  sessions.set(token, { expires: Date.now() + SESSION_TTL, type, email })
+  const expires = Date.now() + SESSION_TTL
+  if (db) {
+    await db.from('sessions').insert({ token, email: email || '', expires })
+  }
+  sessionsMem.set(token, { expires, email })
   return token
 }
 
-export function verifySession(token: string): Session | null {
+export async function verifySession(token: string): Promise<Session | null> {
   cleanup()
-  const s = sessions.get(token)
+  if (db) {
+    const { data } = await db.from('sessions').select('*').eq('token', token).maybeSingle()
+    if (!data) return null
+    if (Date.now() > data.expires) {
+      await db.from('sessions').delete().eq('token', token)
+      return null
+    }
+    return { expires: data.expires, email: data.email || undefined }
+  }
+  const s = sessionsMem.get(token)
   if (!s) return null
-  if (Date.now() > s.expires) { sessions.delete(token); return null }
+  if (Date.now() > s.expires) { sessionsMem.delete(token); return null }
   return s
 }
 
-export function getAllBookings(): Booking[] {
-  return Array.from(bookings.values()).sort(
+export async function getAllBookings(): Promise<Booking[]> {
+  if (db) {
+    const { data } = await db.from('bookings').select('*').order('created_at', { ascending: false })
+    if (!data) return []
+    return data as Booking[]
+  }
+  return Array.from(bookingsMem.values()).sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   )
 }
 
-export function getBooking(id: string): Booking | undefined {
-  return bookings.get(id)
+export async function getBooking(id: string): Promise<Booking | undefined> {
+  if (db) {
+    const { data } = await db.from('bookings').select('*').eq('id', id).maybeSingle()
+    return (data as Booking) || undefined
+  }
+  return bookingsMem.get(id)
 }
 
-export function addBooking(booking: Booking): void {
-  bookings.set(booking.id, booking)
+export async function addBooking(booking: Booking): Promise<Booking> {
+  if (db) {
+    const { data, error } = await db.from('bookings').insert({
+      customer_name: booking.customerName,
+      customer_email: booking.customerEmail,
+      customer_phone: booking.customerPhone,
+      service_id: booking.serviceId,
+      barber_id: booking.barberId,
+      date: booking.date,
+      time: booking.time,
+      status: booking.status,
+      notes: booking.notes || '',
+    }).select('*').single()
+    if (error) throw new Error(error.message)
+    return mapRowToBooking(data)
+  }
+  bookingsMem.set(booking.id, booking)
+  return booking
 }
 
-export function updateBooking(id: string, updates: Partial<Booking>): Booking | undefined {
-  const existing = bookings.get(id)
+export async function updateBooking(id: string, updates: Partial<Booking>): Promise<Booking | undefined> {
+  if (db) {
+    const patch: Record<string, unknown> = {}
+    if (updates.customerName !== undefined) patch.customer_name = updates.customerName
+    if (updates.customerEmail !== undefined) patch.customer_email = updates.customerEmail
+    if (updates.customerPhone !== undefined) patch.customer_phone = updates.customerPhone
+    if (updates.serviceId !== undefined) patch.service_id = updates.serviceId
+    if (updates.barberId !== undefined) patch.barber_id = updates.barberId
+    if (updates.date !== undefined) patch.date = updates.date
+    if (updates.time !== undefined) patch.time = updates.time
+    if (updates.status !== undefined) patch.status = updates.status
+    if (updates.notes !== undefined) patch.notes = updates.notes
+    const { data } = await db.from('bookings').update(patch).eq('id', id).select('*').maybeSingle()
+    return (data as Booking) || undefined
+  }
+  const existing = bookingsMem.get(id)
   if (!existing) return undefined
   const updated = { ...existing, ...updates }
-  bookings.set(id, updated)
+  bookingsMem.set(id, updated)
   return updated
 }
 
-export function deleteBooking(id: string): boolean {
-  return bookings.delete(id)
+export async function deleteBooking(id: string): Promise<boolean> {
+  if (db) {
+    const { error } = await db.from('bookings').delete().eq('id', id)
+    return !error
+  }
+  return bookingsMem.delete(id)
+}
+
+export async function getBookingsForDate(date: string): Promise<{ count: number; times: string[] }> {
+  if (db) {
+    const { data } = await db.from('bookings')
+      .select('time')
+      .eq('date', date)
+      .in('status', ['confirmed', 'completed'])
+    return { count: data?.length || 0, times: data?.map(r => r.time) || [] }
+  }
+  const matching = Array.from(bookingsMem.values()).filter(
+    b => b.date === date && (b.status === 'confirmed' || b.status === 'completed')
+  )
+  return { count: matching.length, times: matching.map(b => b.time) }
+}
+
+function mapRowToBooking(row: Record<string, unknown>): Booking {
+  return {
+    id: String(row.id),
+    customerName: String(row.customer_name),
+    customerEmail: String(row.customer_email),
+    customerPhone: String(row.customer_phone),
+    serviceId: String(row.service_id),
+    barberId: String(row.barber_id),
+    date: String(row.date),
+    time: String(row.time),
+    status: row.status as Booking['status'],
+    notes: String(row.notes) || undefined,
+    createdAt: String(row.created_at),
+  }
 }
