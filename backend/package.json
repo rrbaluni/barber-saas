@@ -1,0 +1,17 @@
+{
+  "name": "barber-saas-backend",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/index.js",
+    "start": "node src/index.js",
+    "seed": "node src/seed.js",
+    "build:frontend": "cd ../frontend && npm run build"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.0",
+    "pg": "^8.13.0",
+    "sql.js": "^1.11.0"
+  }
+}
