@@ -1,11 +1,11 @@
 'use client'
 
-import { useState, useMemo, Suspense } from 'react'
+import { useState, useMemo, useEffect, Suspense } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { format, addDays, startOfWeek, isSameDay, isBefore, startOfToday } from 'date-fns'
 import { services, barbers, timeSlots } from '@/lib/data'
-import { saveBooking, generateId, getBookedSlots, getDailyBookingCount, getSettings, sanitizeInput } from '@/lib/store'
+import { generateId, getSettings, getDailyBookingCount, getBookedSlots, sanitizeInput } from '@/lib/store'
 import { HiCheck, HiArrowRight, HiCalendarDays, HiClock, HiExclamationCircle } from 'react-icons/hi2'
 
 const steps = ['Service', 'Barber', 'Date & Time', 'Details', 'Confirm']
@@ -27,13 +27,29 @@ function BookingForm() {
   const [notes, setNotes] = useState('')
   const [booked, setBooked] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [submitting, setSubmitting] = useState(false)
 
   const today = startOfToday()
   const weekStart = startOfWeek(today, { weekStartsOn: 1 })
   const weekDays = Array.from({ length: 14 }, (_, i) => addDays(weekStart, i))
   const settings = getSettings()
-  const bookedSlots = selectedDate ? getBookedSlots(format(selectedDate, 'yyyy-MM-dd')) : []
-  const dailyCount = selectedDate ? getDailyBookingCount(format(selectedDate, 'yyyy-MM-dd')) : 0
+  const [bookedSlots, setBookedSlots] = useState<string[]>([])
+  const [dailyCount, setDailyCount] = useState(0)
+
+  useEffect(() => {
+    if (!selectedDate) { setBookedSlots([]); setDailyCount(0); return }
+    const dateStr = format(selectedDate, 'yyyy-MM-dd')
+    fetch(`/api/availability?date=${dateStr}`)
+      .then((r) => r.json())
+      .then((data) => {
+        setBookedSlots(data.bookedSlots || [])
+        setDailyCount(data.dailyCount || 0)
+      })
+      .catch(() => {
+        setBookedSlots(getBookedSlots(dateStr))
+        setDailyCount(getDailyBookingCount(dateStr))
+      })
+  }, [selectedDate])
 
   const dayName = selectedDate ? format(selectedDate, 'EEEE') : ''
   const daySchedule = settings.schedules.find((s) => s.day === dayName)
@@ -65,7 +81,7 @@ function BookingForm() {
     return Object.keys(errs).length === 0
   }
 
-  const handleBook = () => {
+  const handleBook = async () => {
     const errs: Record<string, string> = {}
     if (!selectedService) errs.service = 'Select a service'
     if (!selectedBarber) errs.barber = 'Select a barber'
@@ -80,14 +96,33 @@ function BookingForm() {
       setErrors(errs)
       return
     }
-    saveBooking({
-      id: generateId(), serviceId: selectedService, barberId: selectedBarber,
-      customerName: sanitizeInput(name), customerEmail: sanitizeInput(email),
-      customerPhone: sanitizeInput(phone),
-      date: format(selectedDate!, 'yyyy-MM-dd'), time: selectedTime,
-      notes: sanitizeInput(notes), status: 'confirmed', createdAt: new Date().toISOString()
-    })
-    setBooked(true)
+    setSubmitting(true)
+    try {
+      const payload = {
+        id: generateId(),
+        serviceId: selectedService,
+        barberId: selectedBarber,
+        customerName: sanitizeInput(name),
+        customerEmail: sanitizeInput(email),
+        customerPhone: sanitizeInput(phone),
+        date: format(selectedDate!, 'yyyy-MM-dd'),
+        time: selectedTime,
+        notes: sanitizeInput(notes),
+        status: 'confirmed' as const,
+        createdAt: new Date().toISOString(),
+      }
+      const res = await fetch('/api/bookings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      if (!res.ok) throw new Error('Booking failed')
+      setBooked(true)
+    } catch {
+      setErrors({ submit: 'Failed to create booking. Please try again.' })
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   const handleDetailsContinue = () => {
@@ -283,8 +318,12 @@ function BookingForm() {
             </div>
             <div className="flex items-center justify-between mt-8 max-w-md mx-auto">
               <button onClick={() => setStep(3)} className="text-sm text-charcoal/50 dark:text-white/50 hover:text-gold transition-colors">&larr; Edit details</button>
-              <button onClick={handleBook} className="px-8 py-3 bg-gold text-charcoal font-bold rounded-full hover:bg-gold-light transition-all flex items-center gap-2 shadow-lg shadow-gold/20">Confirm Booking <HiCheck className="w-4 h-4" /></button>
+              <button onClick={handleBook} disabled={submitting}
+                className="px-8 py-3 bg-gold text-charcoal font-bold rounded-full hover:bg-gold-light transition-all flex items-center gap-2 shadow-lg shadow-gold/20 disabled:opacity-50">
+                {submitting ? 'Booking...' : 'Confirm Booking'} <HiCheck className="w-4 h-4" />
+              </button>
             </div>
+            {errors.submit && <p className="text-red-400 text-xs text-center mt-4">{errors.submit}</p>}
           </motion.div>
         )}
       </AnimatePresence>

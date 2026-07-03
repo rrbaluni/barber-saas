@@ -2,10 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import {
-  getBookings, updateBookingStatus, updateBooking, deleteBooking,
-  getSettings, saveSettings, getDailyBookingCount, getDefaultSettings
-} from '@/lib/store'
+import { getSettings, saveSettings, getDefaultSettings } from '@/lib/store'
 import { services, barbers } from '@/lib/data'
 import { Booking, ShopSettings, DaySchedule } from '@/types'
 import {
@@ -14,15 +11,21 @@ import {
   HiOutlineClock, HiOutlineSun, HiOutlineArrowPath
 } from 'react-icons/hi2'
 
-const ADMIN_PW_HASH = '240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9'
-
-async function sha256(msg: string): Promise<string> {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(msg))
-  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('')
-}
-
+const API_BASE = '/api'
 type Tab = 'dashboard' | 'settings'
 type BookingStatus = Booking['status']
+
+async function api(path: string, options?: RequestInit) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    ...options,
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Request failed' }))
+    throw new Error(err.error || `HTTP ${res.status}`)
+  }
+  return res.json()
+}
 
 export default function AdminPage() {
   const [bookings, setBookings] = useState<Booking[]>([])
@@ -36,37 +39,53 @@ export default function AdminPage() {
   const [loginAttempts, setLoginAttempts] = useState(0)
   const [loginBlocked, setLoginBlocked] = useState(false)
   const loginTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const tokenRef = useRef<string | null>(null)
 
   // Reschedule state
   const [rescheduleId, setRescheduleId] = useState<string | null>(null)
   const [rescheduleDate, setRescheduleDate] = useState('')
   const [rescheduleTime, setRescheduleTime] = useState('')
 
+  const fetchBookings = async () => {
+    if (!tokenRef.current) return
+    try {
+      const data = await api('/bookings', {
+        headers: { Authorization: `Bearer ${tokenRef.current}` },
+      })
+      setBookings(data)
+    } catch {
+      // silently fail on polling
+    }
+  }
+
   useEffect(() => {
-    setBookings(getBookings())
     setSettings(getSettings())
   }, [])
 
   useEffect(() => {
     if (!authenticated) return
-    const interval = setInterval(() => setBookings(getBookings()), 5000)
+    fetchBookings()
+    const interval = setInterval(fetchBookings, 5000)
     return () => clearInterval(interval)
   }, [authenticated])
-
-  const refreshBookings = () => setBookings(getBookings())
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault()
     if (loginBlocked) return
     setAuthError('')
-    const hash = await sha256(password)
-    if (hash === ADMIN_PW_HASH) {
+    try {
+      const data = await api('/auth', {
+        method: 'POST',
+        body: JSON.stringify({ password }),
+      })
+      tokenRef.current = data.token
       setAuthenticated(true)
       setLoginAttempts(0)
-    } else {
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Incorrect password'
       const attempts = loginAttempts + 1
       setLoginAttempts(attempts)
-      setAuthError(attempts >= 3 ? 'Too many attempts. Try again in 30 seconds.' : 'Incorrect password')
+      setAuthError(attempts >= 3 ? 'Too many attempts. Try again in 30 seconds.' : message)
       if (attempts >= 3) {
         setLoginBlocked(true)
         if (loginTimer.current) clearTimeout(loginTimer.current)
@@ -78,16 +97,26 @@ export default function AdminPage() {
     }
   }
 
-  const handleStatus = (id: string, status: BookingStatus) => {
-    updateBookingStatus(id, status)
-    refreshBookings()
+  const handleStatus = async (id: string, status: BookingStatus) => {
+    try {
+      await api(`/bookings/${id}`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${tokenRef.current}` },
+        body: JSON.stringify({ status }),
+      })
+      fetchBookings()
+    } catch {}
   }
 
-  const handleDelete = (id: string) => {
-    if (window.confirm('Delete this booking permanently?')) {
-      deleteBooking(id)
-      refreshBookings()
-    }
+  const handleDelete = async (id: string) => {
+    if (!window.confirm('Delete this booking permanently?')) return
+    try {
+      await api(`/bookings/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${tokenRef.current}` },
+      })
+      fetchBookings()
+    } catch {}
   }
 
   const handleReschedule = (booking: Booking) => {
@@ -96,11 +125,17 @@ export default function AdminPage() {
     setRescheduleTime(booking.time)
   }
 
-  const confirmReschedule = () => {
+  const confirmReschedule = async () => {
     if (!rescheduleId || !rescheduleDate || !rescheduleTime) return
-    updateBooking(rescheduleId, { date: rescheduleDate, time: rescheduleTime })
-    setRescheduleId(null)
-    refreshBookings()
+    try {
+      await api(`/bookings/${rescheduleId}`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${tokenRef.current}` },
+        body: JSON.stringify({ date: rescheduleDate, time: rescheduleTime }),
+      })
+      setRescheduleId(null)
+      fetchBookings()
+    } catch {}
   }
 
   const handleSaveSettings = () => {
