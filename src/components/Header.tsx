@@ -57,7 +57,7 @@ export default function Header() {
         <div className="flex items-center justify-between h-16 sm:h-20">
           <Link href="/" className="flex items-center gap-2.5 group">
             <span className="w-9 h-9 rounded-xl bg-gradient-to-br from-gold to-gold-dark flex items-center justify-center text-charcoal font-bold text-sm group-hover:scale-110 group-hover:rotate-3 transition-all duration-300 shadow-lg shadow-gold/20">B</span>
-            <span className="font-heading text-xl font-bold tracking-[0.15em] text-charcoal dark:text-white">BARBERIA</span>
+            <span className={`font-heading text-xl font-bold tracking-[0.15em] transition-colors duration-500 ${scrolled ? 'text-charcoal dark:text-white' : 'text-white'}`}>BARBERIA</span>
           </Link>
 
           <nav className="hidden md:flex items-center gap-1">
@@ -69,7 +69,7 @@ export default function Header() {
                   className={`relative px-4 py-2 text-sm font-medium rounded-full transition-all duration-300 ${
                     isActive
                       ? 'text-gold bg-gold/10'
-                      : 'text-charcoal/60 dark:text-white/60 hover:text-charcoal dark:hover:text-white hover:bg-white/5'
+                      : `${scrolled ? 'text-charcoal/60 dark:text-white/60 hover:text-charcoal dark:hover:text-white' : 'text-white/70 hover:text-white'} hover:bg-white/5`
                   }`}>
                   {link.label}
                 </Link>
@@ -77,7 +77,7 @@ export default function Header() {
             })}
             <div className="w-px h-6 bg-gold/10 mx-2" />
             <button onClick={toggleTheme}
-              className="p-2.5 rounded-full text-charcoal/50 dark:text-white/50 hover:text-gold hover:bg-gold/10 transition-all" aria-label="Toggle theme">
+              className={`p-2.5 rounded-full transition-all hover:text-gold hover:bg-gold/10 ${scrolled ? 'text-charcoal/50 dark:text-white/50' : 'text-white/60'}`} aria-label="Toggle theme">
               {theme === 'dark' ? <HiSun className="w-4 h-4" /> : <HiMoon className="w-4 h-4" />}
             </button>
             <Link href="/booking"
@@ -92,7 +92,7 @@ export default function Header() {
               {theme === 'dark' ? <HiSun className="w-5 h-5" /> : <HiMoon className="w-5 h-5" />}
             </button>
             <button onClick={() => setMobileOpen(true)}
-              className="p-2 rounded-full text-charcoal dark:text-white hover:text-gold transition-all">
+              className={`p-2 rounded-full transition-all hover:text-gold ${scrolled ? 'text-charcoal dark:text-white' : 'text-white'}`}>
               <HiBars3 className="w-6 h-6" />
             </button>
           </div>
