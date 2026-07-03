@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { verifyPassword, createSession, checkRateLimit, recordFailedAttempt, clearRateLimit } from '@/lib/server-store'
+import { verifyPassword, createSession, checkRateLimit, recordFailedAttempt, clearRateLimit, isPasswordConfigured } from '@/lib/server-store'
 
 function getClientIp(request: NextRequest): string {
   return request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
@@ -9,6 +9,13 @@ function getClientIp(request: NextRequest): string {
 
 export async function POST(request: NextRequest) {
   try {
+    if (!isPasswordConfigured()) {
+      return NextResponse.json(
+        { error: 'Admin password not configured. Set ADMIN_PW_HASH environment variable.' },
+        { status: 503 }
+      )
+    }
+
     const { password } = await request.json()
     if (!password || typeof password !== 'string') {
       return NextResponse.json({ error: 'Password required' }, { status: 400 })

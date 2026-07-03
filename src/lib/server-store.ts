@@ -21,7 +21,10 @@ const RATE_LIMIT_BLOCK = 30 * 1000
 
 const ADMIN_PW_HASH = process.env.ADMIN_PW_HASH
 if (!ADMIN_PW_HASH) {
-  console.warn('⚠  ADMIN_PW_HASH env var not set — using default password (admin123). Set ADMIN_PW_HASH in production.')
+  console.error('❌ ADMIN_PW_HASH environment variable is not set.')
+  console.error('   Generate one: echo -n "your-password" | npx sha256sum')
+  console.error('   Then: vercel env add ADMIN_PW_HASH (or set in your hosting dashboard)')
+  console.error('   Admin login will be disabled until this is configured.')
 }
 
 function cleanup(): void {
@@ -37,6 +40,10 @@ function cleanup(): void {
       rateLimit.delete(ip)
     }
   }
+}
+
+export function isPasswordConfigured(): boolean {
+  return !!ADMIN_PW_HASH
 }
 
 export function checkRateLimit(ip: string): { allowed: boolean; remaining: number; blockedUntil: number | null } {
@@ -94,8 +101,8 @@ export function clearRateLimit(ip: string): void {
 }
 
 export function verifyPassword(password: string): boolean {
-  const hash = ADMIN_PW_HASH || '240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9'
-  return createHash('sha256').update(password).digest('hex') === hash
+  if (!ADMIN_PW_HASH) return false
+  return createHash('sha256').update(password).digest('hex') === ADMIN_PW_HASH
 }
 
 export function createSession(): string {

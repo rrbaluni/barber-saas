@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAllBookings, addBooking, verifySession } from '@/lib/server-store'
+import { isValidOrigin, validateBookingInput, sanitize } from '@/lib/api-utils'
 
 function isAuthenticated(request: NextRequest): boolean {
   const auth = request.headers.get('Authorization')
@@ -16,21 +17,31 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    if (!isValidOrigin(request)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
     const body = await request.json()
-    const { id, serviceId, barberId, customerName, customerEmail, customerPhone, date, time, notes, status, createdAt } = body
-    if (!id || !serviceId || !barberId || !customerName || !customerEmail || !customerPhone || !date || !time || !createdAt) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+
+    const errors = validateBookingInput(body)
+    if (errors.length > 0) {
+      return NextResponse.json({ errors }, { status: 422 })
     }
+
     const booking = {
-      id, serviceId, barberId,
-      customerName: customerName.replace(/<[^>]*>/g, '').trim(),
-      customerEmail: customerEmail.replace(/<[^>]*>/g, '').trim(),
-      customerPhone: customerPhone.replace(/<[^>]*>/g, '').trim(),
-      date, time,
-      notes: notes ? notes.replace(/<[^>]*>/g, '').trim() : undefined,
-      status: status || 'confirmed',
-      createdAt,
+      id: body.id as string,
+      serviceId: body.serviceId as string,
+      barberId: body.barberId as string,
+      customerName: sanitize(body.customerName as string),
+      customerEmail: sanitize(body.customerEmail as string),
+      customerPhone: sanitize(body.customerPhone as string),
+      date: body.date as string,
+      time: body.time as string,
+      notes: body.notes ? sanitize(body.notes as string) : undefined,
+      status: 'confirmed' as const,
+      createdAt: body.createdAt as string,
     }
+
     addBooking(booking)
     return NextResponse.json(booking, { status: 201 })
   } catch {
