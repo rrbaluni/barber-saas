@@ -5,7 +5,7 @@ services:
     region: oregon
     plan: free
     buildCommand: cd frontend && npm install && npm run build && cd ../backend && npm install
-    startCommand: cd backend && node src/index.js
+    startCommand: cd backend && npx tsx src/index.ts
     healthCheckPath: /api/health
     envVars:
       - key: DATABASE_URL
