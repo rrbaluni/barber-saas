@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { format, addDays, startOfWeek, isSameDay, isBefore, startOfToday } from 'date-fns'
 import { services, barbers, timeSlots } from '@/lib/data'
-import { saveBooking, generateId, getBookedSlots } from '@/lib/store'
+import { saveBooking, generateId, getBookedSlots, getDailyBookingCount, getSettings } from '@/lib/store'
 import { HiCheck, HiArrowRight, HiCalendarDays, HiClock, HiExclamationCircle } from 'react-icons/hi2'
 
 const steps = ['Service', 'Barber', 'Date & Time', 'Details', 'Confirm']
@@ -30,8 +30,22 @@ function BookingForm() {
   const today = startOfToday()
   const weekStart = startOfWeek(today, { weekStartsOn: 1 })
   const weekDays = Array.from({ length: 14 }, (_, i) => addDays(weekStart, i))
+  const settings = getSettings()
   const bookedSlots = selectedDate ? getBookedSlots(format(selectedDate, 'yyyy-MM-dd')) : []
-  const availableSlots = useMemo(() => timeSlots.filter((s) => !bookedSlots.includes(s)), [bookedSlots])
+  const dailyCount = selectedDate ? getDailyBookingCount(format(selectedDate, 'yyyy-MM-dd')) : 0
+
+  const dayName = selectedDate ? format(selectedDate, 'EEEE') : ''
+  const daySchedule = settings.schedules.find((s) => s.day === dayName)
+  const isAtCapacity = daySchedule ? dailyCount >= daySchedule.maxBookings : false
+
+  const availableSlots = useMemo(() => {
+    let slots = timeSlots.filter((s) => !bookedSlots.includes(s))
+    if (daySchedule && !isAtCapacity) {
+      slots = slots.filter((s) => s >= daySchedule.open && s <= daySchedule.close)
+    }
+    return slots
+  }, [bookedSlots, daySchedule, isAtCapacity])
+
   const selectedServiceData = services.find((s) => s.id === selectedService)
   const selectedBarberData = barbers.find((b) => b.id === selectedBarber)
 
@@ -131,9 +145,12 @@ function BookingForm() {
                 {weekDays.map((day) => {
                   const isPast = isBefore(day, today) && !isSameDay(day, today)
                   const isSelected = selectedDate && isSameDay(day, selectedDate)
+                  const dName = format(day, 'EEEE')
+                  const dSchedule = settings.schedules.find((s) => s.day === dName)
+                  const isOff = dSchedule && !dSchedule.enabled
                   return (
-                    <button key={day.toISOString()} disabled={isPast} onClick={() => { setSelectedDate(day); setSelectedTime('') }} role="radio" aria-checked={!!isSelected} aria-label={format(day, 'EEEE, MMMM d, yyyy')}
-                      className={`flex-shrink-0 w-20 py-3 rounded-xl text-center transition-all duration-300 ${isPast ? 'opacity-30 cursor-not-allowed bg-gold/5' : isSelected ? 'bg-gold text-charcoal shadow-lg shadow-gold/20' : 'bg-white dark:bg-charcoal-light border border-gold/10 hover:border-gold/30 text-charcoal dark:text-white'}`}>
+                    <button key={day.toISOString()} disabled={isPast || !!isOff} onClick={() => { setSelectedDate(day); setSelectedTime('') }} role="radio" aria-checked={!!isSelected} aria-label={format(day, 'EEEE, MMMM d, yyyy')}
+                      className={`flex-shrink-0 w-20 py-3 rounded-xl text-center transition-all duration-300 ${isPast || isOff ? 'opacity-30 cursor-not-allowed bg-gold/5' : isSelected ? 'bg-gold text-charcoal shadow-lg shadow-gold/20' : 'bg-white dark:bg-charcoal-light border border-gold/10 hover:border-gold/30 text-charcoal dark:text-white'}`}>
                       <div className="text-xs font-medium">{format(day, 'd')}</div>
                       <div className="text-xs">{format(day, 'MMM')}</div>
                     </button>
@@ -143,13 +160,31 @@ function BookingForm() {
             </div>
             {selectedDate && (
               <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-                <p className="text-sm font-medium text-charcoal/60 dark:text-white/60 mb-3 flex items-center gap-2"><HiClock className="w-4 h-4" /> Available Times</p>
-                <div className="grid grid-cols-4 sm:grid-cols-6 gap-2" role="radiogroup" aria-label="Times">
-                  {availableSlots.map((slot) => (
-                    <button key={slot} onClick={() => setSelectedTime(slot)} role="radio" aria-checked={selectedTime === slot}
-                      className={`py-2.5 rounded-lg text-sm font-medium transition-all duration-300 ${selectedTime === slot ? 'bg-gold text-charcoal shadow-lg shadow-gold/20' : 'bg-white dark:bg-charcoal-light border border-gold/10 hover:border-gold/30 text-charcoal/70 dark:text-white/70'}`}>{slot}</button>
-                  ))}
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-sm font-medium text-charcoal/60 dark:text-white/60 flex items-center gap-2"><HiClock className="w-4 h-4" /> Available Times</p>
+                  {daySchedule && (
+                    <span className="text-xs text-charcoal/40 dark:text-white/40">
+                      {dailyCount}/{daySchedule.maxBookings} booked
+                    </span>
+                  )}
                 </div>
+                {isAtCapacity ? (
+                  <div className="text-center py-8 bg-amber-50 dark:bg-amber-900/10 rounded-xl border border-amber-200 dark:border-amber-800">
+                    <p className="text-amber-700 dark:text-amber-300 font-medium">This day is fully booked</p>
+                    <p className="text-amber-600/60 dark:text-amber-300/60 text-sm mt-1">Please select another date.</p>
+                  </div>
+                ) : availableSlots.length === 0 ? (
+                  <div className="text-center py-8 bg-gold/5 rounded-xl border border-gold/10">
+                    <p className="text-charcoal/50 dark:text-white/50">No available time slots for this date.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-4 sm:grid-cols-6 gap-2" role="radiogroup" aria-label="Times">
+                    {availableSlots.map((slot) => (
+                      <button key={slot} onClick={() => setSelectedTime(slot)} role="radio" aria-checked={selectedTime === slot}
+                        className={`py-2.5 rounded-lg text-sm font-medium transition-all duration-300 ${selectedTime === slot ? 'bg-gold text-charcoal shadow-lg shadow-gold/20' : 'bg-white dark:bg-charcoal-light border border-gold/10 hover:border-gold/30 text-charcoal/70 dark:text-white/70'}`}>{slot}</button>
+                    ))}
+                  </div>
+                )}
               </motion.div>
             )}
             <div className="flex items-center justify-between mt-8">

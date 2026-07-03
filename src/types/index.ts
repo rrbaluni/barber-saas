@@ -45,4 +45,17 @@ export interface Booking {
   createdAt: string
 }
 
+export interface DaySchedule {
+  day: string
+  open: string
+  close: string
+  maxBookings: number
+  enabled: boolean
+}
+
+export interface ShopSettings {
+  schedules: DaySchedule[]
+  slotInterval: number
+}
+
 export type TimeSlot = string
