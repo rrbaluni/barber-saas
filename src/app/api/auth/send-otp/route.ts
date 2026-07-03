@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
   try {
     if (!isOtpConfigured()) {
       return NextResponse.json(
-        { error: 'Email OTP not configured. Set ADMIN_EMAIL, SMTP_HOST, SMTP_USER, SMTP_PASS.' },
+        { error: 'Email OTP not configured. Set ADMIN_EMAIL and RESEND_API_KEY.' },
         { status: 503 }
       )
     }

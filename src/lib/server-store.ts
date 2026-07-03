@@ -1,6 +1,6 @@
 import { Booking } from '@/types'
 import { randomUUID } from 'crypto'
-import nodemailer from 'nodemailer'
+import { Resend } from 'resend'
 import { db, isDbConnected } from './db'
 
 interface Session {
@@ -32,25 +32,16 @@ const RATE_LIMIT_WINDOW = 15 * 60 * 1000
 const RATE_LIMIT_BLOCK = 30 * 1000
 
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL
-const SMTP_HOST = process.env.SMTP_HOST || ''
-const SMTP_PORT = parseInt(process.env.SMTP_PORT || '587', 10)
-const SMTP_USER = process.env.SMTP_USER || ''
-const SMTP_PASS = process.env.SMTP_PASS || ''
-const SMTP_FROM = process.env.SMTP_FROM || SMTP_USER
+const RESEND_API_KEY = process.env.RESEND_API_KEY || ''
 
 if (!ADMIN_EMAIL) {
   console.error('Missing ADMIN_EMAIL environment variable.')
 }
-if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) {
-  console.error('Missing SMTP configuration. Set SMTP_HOST, SMTP_USER, SMTP_PASS, and ADMIN_EMAIL.')
+if (!RESEND_API_KEY) {
+  console.error('Missing RESEND_API_KEY environment variable.')
 }
 
-const transporter = nodemailer.createTransport({
-  host: SMTP_HOST,
-  port: SMTP_PORT,
-  secure: SMTP_PORT === 465,
-  auth: { user: SMTP_USER, pass: SMTP_PASS },
-})
+const resend = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null
 
 function generateOtpCode(): string {
   return String(Math.floor(100000 + Math.random() * 900000))
@@ -75,7 +66,7 @@ function cleanup(): void {
 }
 
 export function isOtpConfigured(): boolean {
-  return !!(ADMIN_EMAIL && SMTP_HOST && SMTP_USER && SMTP_PASS)
+  return !!(ADMIN_EMAIL && RESEND_API_KEY)
 }
 
 export function getAdminEmail(): string {
@@ -92,11 +83,11 @@ export async function sendOtp(email: string): Promise<{ success: boolean; error?
   otps.set(email.toLowerCase(), { code, expires: Date.now() + OTP_TTL, attempts: 0 })
 
   try {
-    await transporter.sendMail({
-      from: SMTP_FROM,
+    if (!resend) throw new Error('Resend not configured')
+    await resend.emails.send({
+      from: 'Barber Shop <onboarding@resend.dev>',
       to: email,
       subject: 'Your Admin Verification Code',
-      text: `Your admin verification code is: ${code}\n\nThis code expires in 5 minutes.`,
       html: `<p>Your admin verification code is:</p><h2 style="font-size: 28px; letter-spacing: 4px; color: #333;">${code}</h2><p>This code expires in 5 minutes.</p>`,
     })
     return { success: true }
