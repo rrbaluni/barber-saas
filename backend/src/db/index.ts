@@ -1,6 +1,8 @@
-let adapter;
+import type { DbAdapter } from '../types.js';
 
-export async function initDb() {
+let adapter: DbAdapter;
+
+export async function initDb(): Promise<void> {
   if (process.env.DATABASE_URL) {
     const { PostgresAdapter } = await import('./postgres.js');
     adapter = new PostgresAdapter(process.env.DATABASE_URL);
@@ -11,10 +13,10 @@ export async function initDb() {
   await adapter.init();
 }
 
-export async function query(sql, params = []) {
+export async function query(sql: string, params: unknown[] = []): Promise<Record<string, unknown>[]> {
   return adapter.query(sql, params);
 }
 
-export async function get(sql, params = []) {
+export async function get(sql: string, params: unknown[] = []): Promise<Record<string, unknown> | null> {
   return adapter.get(sql, params);
 }

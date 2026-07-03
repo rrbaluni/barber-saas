@@ -1,13 +1,16 @@
-import initSqlJs from 'sql.js';
-import { readFileSync, writeFileSync, existsSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import initSqlJs, { type Database } from 'sql.js';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import type { DbAdapter } from '../types.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DB_PATH = join(__dirname, '..', '..', 'data.db');
 
-export class SqliteAdapter {
-  async init() {
+export class SqliteAdapter implements DbAdapter {
+  private db!: Database;
+
+  async init(): Promise<void> {
     const SQL = await initSqlJs();
 
     if (existsSync(DB_PATH)) {
@@ -62,31 +65,31 @@ export class SqliteAdapter {
     this.save();
   }
 
-  save() {
+  private save(): void {
     const data = this.db.export();
     writeFileSync(DB_PATH, Buffer.from(data));
   }
 
-  query(sql, params = []) {
+  query(sql: string, params: unknown[] = []): Promise<Record<string, unknown>[]> {
     const stmt = this.db.prepare(sql);
     const isSelect = /^\s*(SELECT|WITH)/i.test(sql);
 
     if (isSelect) {
       stmt.bind(params);
-      const rows = [];
-      while (stmt.step()) rows.push(stmt.getAsObject());
+      const rows: Record<string, unknown>[] = [];
+      while (stmt.step()) rows.push(stmt.getAsObject() as Record<string, unknown>);
       stmt.free();
-      return rows;
+      return Promise.resolve(rows);
     }
 
     stmt.run(params);
     stmt.free();
     this.save();
-    return { changes: this.db.getRowsModified(), lastInsertRowid: null };
+    return Promise.resolve([]);
   }
 
-  get(sql, params = []) {
-    const rows = this.query(sql, params);
-    return rows[0] || null;
+  async get(sql: string, params: unknown[] = []): Promise<Record<string, unknown> | null> {
+    const rows = await this.query(sql, params);
+    return rows[0] ?? null;
   }
 }

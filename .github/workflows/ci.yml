@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Backend typecheck
+        working-directory: backend
+        run: |
+          npm ci
+          npx tsc --noEmit
+
+      - name: Frontend install & typecheck
+        working-directory: frontend
+        run: |
+          npm ci
+          npx tsc --noEmit
+
+      - name: Frontend build
+        working-directory: frontend
+        run: npm run build
+
+      - name: Backend integration test
+        working-directory: backend
+        env:
+          DATABASE_URL: postgres://test:test@localhost:5432/test
+        run: |
+          npx tsx src/index.ts &
+          sleep 3
+          curl -s http://localhost:3001/api/health | grep -q ok
+          curl -s http://localhost:3001/api/barbers | grep -q Marco
+          echo "All checks passed"

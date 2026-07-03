@@ -1,9 +1,12 @@
 import { useState, useEffect } from 'react';
 import BarberCard from '../components/BarberCard';
 
+interface Barber { id: number; name: string; bio: string | null; }
+interface Service { id: number; name: string; description: string | null; price: number; duration: number; }
+
 export default function Home() {
-  const [barbers, setBarbers] = useState([]);
-  const [services, setServices] = useState([]);
+  const [barbers, setBarbers] = useState<Barber[]>([]);
+  const [services, setServices] = useState<Service[]>([]);
 
   useEffect(() => {
     fetch('/api/barbers').then(r => r.json()).then(setBarbers);
@@ -17,7 +20,7 @@ export default function Home() {
         <p className="text-gray-500 text-lg">Book your next cut with the best barbers in town.</p>
       </div>
 
-      <section className="mb-16">
+      <section id="barbers" className="mb-16">
         <h2 className="text-2xl font-bold mb-6">Our Barbers</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {barbers.map((b, i) => <BarberCard key={b.id} barber={b} index={i} />)}
@@ -45,9 +48,7 @@ export default function Home() {
       <section className="bg-gray-900 text-white rounded-2xl p-10 text-center">
         <h2 className="text-2xl font-bold mb-2">Ready for a fresh look?</h2>
         <p className="text-gray-400 mb-6">Book online in under a minute.</p>
-        <a href="#barbers" className="inline-block bg-green-500 hover:bg-green-600 text-white font-semibold px-8 py-3 rounded-full transition">
-          Book Now
-        </a>
+        <a href="#barbers" className="inline-block bg-green-500 hover:bg-green-600 text-white font-semibold px-8 py-3 rounded-full transition">Book Now</a>
       </section>
     </div>
   );

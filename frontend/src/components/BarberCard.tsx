@@ -2,7 +2,12 @@ import { Link } from 'react-router-dom';
 
 const avatars = ['🧔', '💈', '✂️', '🪒', '👨'];
 
-export default function BarberCard({ barber, index }) {
+interface BarberCardProps {
+  barber: { id: number; name: string; bio: string | null };
+  index: number;
+}
+
+export default function BarberCard({ barber, index }: BarberCardProps) {
   return (
     <Link
       to={`/book/${barber.id}`}
