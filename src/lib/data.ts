@@ -130,19 +130,19 @@ export const gallery: GalleryImage[] = [
   },
   {
     id: '4',
-    src: 'https://images.unsplash.com/photo-1593702288056-49a1cb54b8d5?w=600&h=600&fit=crop',
+    src: 'https://images.unsplash.com/photo-1747832802200-7aaceb517e0c?w=600&h=600&fit=crop',
     alt: 'Modern pompadour style',
     category: 'haircuts',
   },
   {
     id: '5',
-    src: 'https://images.unsplash.com/photo-1621605815971-fbc98d665666?w=600&h=600&fit=crop',
+    src: 'https://images.unsplash.com/photo-1762944080655-7357ebb252d3?w=600&h=600&fit=crop',
     alt: 'Barber tools and products',
     category: 'interior',
   },
   {
     id: '6',
-    src: 'https://images.unsplash.com/photo-1585747861115-0deabd89d523?w=600&h=600&fit=crop',
+    src: 'https://images.unsplash.com/photo-1759134248487-e8baaf31e33e?w=600&h=600&fit=crop',
     alt: 'Classic barber chair',
     category: 'interior',
   },
@@ -154,7 +154,7 @@ export const gallery: GalleryImage[] = [
   },
   {
     id: '8',
-    src: 'https://images.unsplash.com/photo-1567894340315-735d7c361db7?w=600&h=600&fit=crop',
+    src: 'https://images.unsplash.com/photo-1770253980732-dfed1cfdfa43?w=600&h=600&fit=crop',
     alt: 'Beard grooming session',
     category: 'beards',
   },

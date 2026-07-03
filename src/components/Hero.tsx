@@ -39,7 +39,7 @@ const slides = [
     ctaLink: '/booking',
     secondaryCta: 'Contact Us',
     secondaryLink: '/#contact',
-    image: 'https://images.unsplash.com/photo-1567894340315-735d7c361db7?w=1920&q=85',
+    image: 'https://images.unsplash.com/photo-1776850476481-2bccba2e35c7?w=1920&q=85',
     badge: 'Since 2010',
   },
 ]
